@@ -1,0 +1,23 @@
+{
+  "name": "whale-girl-pet",
+  "version": "1.0.0",
+  "productName": "Whale Girl Pet",
+  "description": "Deep-sea whale-girl desktop pet: a transparent, draggable, always-on-top window. Double-click her to look up a word or term.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "icon": "python tools/make_icon.py"
+  },
+  "keywords": [
+    "electron",
+    "desktop-pet",
+    "dictionary",
+    "translation",
+    "deepseek",
+    "whale-girl"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.0.0"
+  }
+}

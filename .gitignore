@@ -1,0 +1,16 @@
+# Dependencies (electron alone is ~200 MB; never commit it)
+node_modules/
+npm-debug.log*
+yarn-error.log*
+package-lock.json.bak
+
+# Build / scratch output from one-off helper scripts
+_dlg.js
+_tmp2.js
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
