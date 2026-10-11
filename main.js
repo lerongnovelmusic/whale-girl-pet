@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, dialog, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, screen, dialog, shell, Notification } = require("electron");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -159,7 +159,7 @@ ipcMain.handle("append-file", async (_e, { path: filePath, text }) => {
 ipcMain.on("resize", (_e, { w, h }) => {
   if (!win) return;
   win.setSize(
-    Math.max(288, Math.round(w)),
+    Math.max(320, Math.round(w)),
     Math.max(214, Math.min(820, Math.round(h)))
   );
 });
@@ -192,6 +192,216 @@ ipcMain.handle("pick-dir", async (_e, current) => {
     properties: ["openDirectory"]
   });
   return r.canceled || !r.filePaths.length ? null : r.filePaths[0];
+});
+
+// ══ 科目清单 / 日程 / 读书材料 ═══════════════════════════════════════════
+// 三份数据都放在本应用的 userData 里，自成一体，不依赖别的东西。
+// 视觉模型调用不在这里 —— 那个在渲染进程里做，复用原有的 getKey()，
+// 省得再加一套密钥存储。
+const collator = new Intl.Collator("zh-Hans-CN", { numeric: true, sensitivity: "base" });
+
+function storeFile(name) {
+  return path.join(app.getPath("userData"), name);
+}
+
+function isDir(p) {
+  try { return fs.statSync(p).isDirectory(); } catch (e) { return false; }
+}
+
+function readJsonList(file, key) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+    const list = Array.isArray(parsed) ? parsed : parsed && parsed[key];
+    return Array.isArray(list) ? list : [];
+  } catch (e) {
+    return []; // 文件不存在或坏了都当空，绝不能因此起不来
+  }
+}
+
+function writeJsonList(file, key, list) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ version: 1, [key]: list }, null, 2), "utf8");
+}
+
+/* ---- 📚 科目 ---- */
+const foldersFile = () => storeFile("folders.json");
+
+function normalizeFolders(raw) {
+  return (Array.isArray(raw) ? raw : [])
+    .filter((it) => it && typeof it.path === "string" && it.path.trim())
+    .slice(0, 200)
+    .map((it, i) => ({
+      id: typeof it.id === "string" && it.id ? it.id : "f" + (i + 1),
+      name: (typeof it.name === "string" && it.name.trim() ? it.name.trim() : it.path).slice(0, 120),
+      path: it.path.trim().slice(0, 1024)
+    }));
+}
+
+ipcMain.handle("folders-get", () => ({
+  ok: true,
+  folders: normalizeFolders(readJsonList(foldersFile(), "folders"))
+    .map((f) => ({ ...f, exists: isDir(f.path) })),
+  file: foldersFile()
+}));
+
+ipcMain.handle("folders-set", (_e, list) => {
+  try {
+    const folders = normalizeFolders(list);
+    writeJsonList(foldersFile(), "folders", folders);
+    return { ok: true, folders };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+
+/** 列一个目录下的子目录，给「整批导入」用。 */
+ipcMain.handle("subdirs", (_e, dir) => {
+  const target = String(dir || "").trim();
+  if (!isDir(target)) return { ok: false, error: "路径不存在或不是文件夹" };
+  try {
+    const dirs = [];
+    for (const entry of fs.readdirSync(target, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      dirs.push({ name: entry.name, path: path.join(target, entry.name) });
+      if (dirs.length >= 400) break;
+    }
+    dirs.sort((a, b) => collator.compare(a.name, b.name));
+    return { ok: true, dirs, path: target };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+
+/* ---- 📅 日程 / deadline ---- */
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_RE = /^\d{2}:\d{2}$/;
+const calendarFile = () => storeFile("calendar.json");
+
+function normalizeEvents(raw) {
+  return (Array.isArray(raw) ? raw : [])
+    .filter((it) => it && typeof it.title === "string" && it.title.trim() && DATE_RE.test(String(it.date || "")))
+    .slice(0, 500)
+    .map((it, i) => ({
+      id: typeof it.id === "string" && it.id ? it.id : "e" + (i + 1),
+      title: it.title.trim().slice(0, 160),
+      date: String(it.date),
+      time: TIME_RE.test(String(it.time || "")) ? String(it.time) : "",
+      note: typeof it.note === "string" ? it.note.trim().slice(0, 500) : "",
+      done: it.done === true
+    }));
+}
+
+ipcMain.handle("calendar-get", () => ({
+  ok: true,
+  events: normalizeEvents(readJsonList(calendarFile(), "events")),
+  file: calendarFile()
+}));
+
+ipcMain.handle("calendar-set", (_e, list) => {
+  try {
+    const events = normalizeEvents(list);
+    writeJsonList(calendarFile(), "events", events);
+    return { ok: true, events };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+
+/** 系统级提醒：弹一条 Windows 通知。 */
+ipcMain.handle("notify", (_e, payload) => {
+  try {
+    if (!Notification.isSupported()) return { ok: false, error: "系统不支持通知" };
+    new Notification({
+      title: String((payload && payload.title) || "鲸鱼娘提醒").slice(0, 120),
+      body: String((payload && payload.body) || "").slice(0, 400),
+      icon: APP_ICON,
+      silent: false
+    }).show();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+
+/* ---- 📖 读书材料 ---- */
+const IMAGE_EXT = new Set([".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"]);
+const IMAGE_MIME = {
+  ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
+  ".bmp": "image/bmp", ".gif": "image/gif", ".tif": "image/tiff", ".tiff": "image/tiff"
+};
+const readerCacheFile = () => storeFile("reader-cache.json");
+
+ipcMain.handle("reader-scan", (_e, dir) => {
+  const target = String(dir || "").trim();
+  if (!isDir(target)) return { ok: false, error: "路径不存在或不是文件夹" };
+  try {
+    const files = [];
+    for (const entry of fs.readdirSync(target, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      if (!IMAGE_EXT.has(path.extname(entry.name).toLowerCase())) continue;
+      const full = path.join(target, entry.name);
+      const st = fs.statSync(full);
+      files.push({ name: entry.name, path: full, size: st.size, mtime: Math.round(st.mtimeMs) });
+      if (files.length >= 500) break;
+    }
+    files.sort((a, b) => collator.compare(a.name, b.name));
+    return { ok: true, dir: target, files };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+
+ipcMain.handle("reader-read", (_e, file) => {
+  const target = String(file || "").trim();
+  try {
+    const bytes = fs.readFileSync(target);
+    const mime = IMAGE_MIME[path.extname(target).toLowerCase()] || "application/octet-stream";
+    return { ok: true, dataUrl: "data:" + mime + ";base64," + bytes.toString("base64") };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+
+ipcMain.handle("reader-cache-get", () => {
+  try { return { ok: true, cache: JSON.parse(fs.readFileSync(readerCacheFile(), "utf8")) }; }
+  catch (e) { return { ok: true, cache: {} }; }
+});
+
+ipcMain.handle("reader-cache-set", (_e, cache) => {
+  try {
+    fs.writeFileSync(readerCacheFile(), JSON.stringify(cache || {}, null, 2), "utf8");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+
+/** 把结果写成一份 markdown 索引，放在被读的那个文件夹里。 */
+ipcMain.handle("reader-write-index", (_e, payload) => {
+  const dir = String((payload && payload.dir) || "").trim();
+  const entries = Array.isArray(payload && payload.entries) ? payload.entries : [];
+  if (!isDir(dir)) return { ok: false, error: "文件夹不存在了" };
+  const esc = (v) => String(v == null ? "" : v).replace(/\|/g, "\\|");
+  const lines = [
+    "# 鲸鱼娘读图索引",
+    "",
+    "由「鲸鱼娘 桌宠」的读书材料片段分析生成。短名和说明都由视觉模型读图后给出，",
+    "用来检索这些片段；原文件名保持不变。",
+    "",
+    `共 ${entries.length} 条。`,
+    "",
+    "| 短名 | 说明 | 文件 |",
+    "| --- | --- | --- |",
+    ...entries.map((it) => `| ${esc(it.name)} | ${esc(it.note)} | \`${esc(it.file)}\` |`),
+    ""
+  ];
+  const target = path.join(dir, "_鲸鱼娘索引.md");
+  try {
+    fs.writeFileSync(target, lines.join("\n"), "utf8");
+    return { ok: true, file: target };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
 });
 
 // 单实例：重复启动时退出新实例，并把已有鲸鱼娘带到前台（防止按钮连点开多个）

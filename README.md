@@ -20,8 +20,10 @@ takes over when they come up short.
 | 🎭 **Galgame dialogue bar** | Longer answers open in a bottom-screen dialogue box with a character portrait, in classic visual-novel style. |
 | 💡 **Screenshot translation** | Click 💡, paste a screenshot (`Ctrl+V`), press Enter — she reads the image and translates/explains it. |
 | 📓 **Word list** | Every lookup is collected, drag to reorder, and optionally appended to a `.txt` file you choose. |
-| 📁 **Folder button** | Opens a folder of your choice — click to open, right-click to pick a different one. |
-| 🔑 **API key box** | In-app settings for your DeepSeek key (stored locally, never sent anywhere else). |
+| 📚 **Subjects** | A list of your subject/course folders — click one to open it in Explorer. Add, import every subfolder of a root in one go, or remove. Click to open, right-click to add. |
+| 📅 **Schedule** | Log deadlines and appointments. Rows are tinted when they're due within 2 days or overdue; she nudges you with a balloon line **and a Windows notification** (once per item per day), and the 📅 button carries a red badge with the count. |
+| 📖 **Reading notes** | Point her at a folder of text screenshots: she skims every image with a vision model, gives each one a short retrievable name plus a one-line summary, and can export `_鲸鱼娘索引.md` into that folder. Results are cached by path/size/mtime, so re-runs only cover new images. |
+| 🔑 **API key box** | In-app settings for your DeepSeek key (stored locally, never sent anywhere else). Required only for 💡 and 📖. |
 
 ## How lookup works
 
@@ -61,20 +63,29 @@ npm start
 | **Double click** | Opens the term input |
 | **Type + Enter** | Look the term up |
 | **💡** | Paste-screenshot mode: `Ctrl+V` then `Enter` |
-| **📁** left / right click | Open the folder / choose a different folder |
+| **📚** left / right click | Open the subject list / add a subject |
+| **📅** | Deadlines and appointments, with due-date reminders |
+| **📖** | Skim a folder of text screenshots and name them |
 | **🔑** | Set or clear your DeepSeek API key |
 | **×** | Quit |
+
+Only one panel is open at a time — opening one closes the others.
 
 Press `Esc` to leave paste mode or close the key box.
 
 ## Configuration
 
 Everything the app persists lives in
-`%APPDATA%\whale-girl-pet` (Windows), `~/Library/Application Support/whale-girl-pet`
-(macOS) or `~/.config/whale-girl-pet` (Linux):
+`%APPDATA%\Whale Girl Pet` (Windows), `~/Library/Application Support/Whale Girl Pet`
+(macOS) or `~/.config/Whale Girl Pet` (Linux) — the folder name comes from
+`productName` in `package.json`:
 
 - `window-pos.json` — last window position
-- `Local Storage/` — your API key, word list, chosen folder, and window visibility
+- `folders.json` — your 📚 subject folders
+- `calendar.json` — your 📅 deadlines
+- `reader-cache.json` — 📖 vision results, keyed by `path|size|mtime`, so unchanged
+  images are never sent to the model twice
+- `Local Storage/` — your API key, word list, and window visibility
 
 To start over, quit the app and delete that directory.
 

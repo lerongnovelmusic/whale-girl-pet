@@ -1,8 +1,8 @@
 {
   "name": "whale-girl-pet",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "productName": "Whale Girl Pet",
-  "description": "Deep-sea whale-girl desktop pet: a transparent, draggable, always-on-top window. Double-click her to look up a word or term.",
+  "description": "Deep-sea whale-girl desktop pet: a transparent, draggable, always-on-top window. Double-click her to look up a word or term; she also keeps subject folders, deadlines with reminders, and can name your reading screenshots.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
